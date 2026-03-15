@@ -9,6 +9,7 @@ set -Eeuo pipefail
 APP_NAME="quick_creator"
 ENTRY_FILE="quick_creator.py"
 PROJECT_DIR="$(pwd)"
+VENV_DIR="$PROJECT_DIR/.venv"
 
 # ==============================
 # COLORS
@@ -26,30 +27,60 @@ echo -e "${CYAN}====================================${NC}"
 echo
 
 # ==============================
-# Checks
+# Detect python binary
 # ==============================
-if ! command -v python3 &> /dev/null; then
-    echo -e "${RED}❌ Python3 not found.${NC}"
+PYTHON_BIN=""
+if command -v python3 &>/dev/null; then
+    PYTHON_BIN="python3"
+elif command -v python &>/dev/null; then
+    PYTHON_BIN="python"
+else
+    echo -e "${RED}❌ Python not found. Please install python3.${NC}"
     exit 1
 fi
+echo -e "${GREEN}✔ Python found:${NC} $($PYTHON_BIN --version)"
 
-if ! python3 -m PyInstaller --version &> /dev/null; then
-    echo -e "${YELLOW}⚠ Installing PyInstaller...${NC}"
-    pip install pyinstaller
+# ==============================
+# Check python3-venv / venv module
+# ==============================
+if ! "$PYTHON_BIN" -m venv --help &>/dev/null; then
+    echo -e "${RED}❌ python3-venv not available.${NC}"
+    echo -e "${YELLOW}   On Debian/Ubuntu: sudo apt install python3-venv${NC}"
+    exit 1
 fi
+echo -e "${GREEN}✔ venv module available.${NC}"
 
 # ==============================
 # Clean old builds
 # ==============================
+echo
 echo -e "${CYAN}🧹 Cleaning old build files...${NC}"
-rm -rf build dist __pycache__ *.spec || true
+rm -rf "$PROJECT_DIR/build" "$PROJECT_DIR/dist" "$PROJECT_DIR/__pycache__" "$PROJECT_DIR"/*.spec || true
+
+# ==============================
+# Create .venv
+# ==============================
+echo
+echo -e "${CYAN}🐍 Creating virtual environment...${NC}"
+"$PYTHON_BIN" -m venv "$VENV_DIR"
+VENV_PIP="$VENV_DIR/bin/pip"
+VENV_PYTHON="$VENV_DIR/bin/python"
+
+# ==============================
+# Install dependencies inside venv
+# ==============================
+echo -e "${CYAN}📦 Installing PyInstaller and PyQt6...${NC}"
+"$VENV_PIP" install --upgrade pip --quiet
+"$VENV_PIP" install pyinstaller pyqt6 --quiet
+echo -e "${GREEN}✔ Dependencies installed.${NC}"
 
 # ==============================
 # Build
 # ==============================
+echo
 echo -e "${GREEN}🚀 Building binary...${NC}"
 
-python3 -m PyInstaller \
+"$VENV_PYTHON" -m PyInstaller \
     --onefile \
     --windowed \
     --clean \
@@ -61,19 +92,29 @@ python3 -m PyInstaller \
 # Move binary to root
 # ==============================
 if [[ -f "$PROJECT_DIR/dist/$APP_NAME" ]]; then
+    if [[ -f "$PROJECT_DIR/$APP_NAME" ]]; then
+        echo -e "${YELLOW}🗑  Removing old binary...${NC}"
+        rm -f "$PROJECT_DIR/$APP_NAME"
+    fi
     echo -e "${CYAN}➜ Moving binary to project root...${NC}"
     mv -f "$PROJECT_DIR/dist/$APP_NAME" "$PROJECT_DIR/"
     chmod +x "$PROJECT_DIR/$APP_NAME"
 else
-    echo -e "${RED}❌ Build failed.${NC}"
+    echo -e "${RED}❌ Build failed. Binary not found in dist/.${NC}"
+    # Cleanup venv before exit
+    rm -rf "$VENV_DIR"
     exit 1
 fi
 
 # ==============================
 # Final Cleanup
 # ==============================
-echo -e "${CYAN}🧼 Removing build garbage...${NC}"
-rm -rf build dist __pycache__ *.spec || true
+echo
+echo -e "${CYAN}🧼 Removing build artifacts...${NC}"
+rm -rf "$PROJECT_DIR/build" "$PROJECT_DIR/dist" "$PROJECT_DIR/__pycache__" "$PROJECT_DIR"/*.spec || true
+
+echo -e "${CYAN}🗑  Removing virtual environment...${NC}"
+rm -rf "$VENV_DIR"
 
 echo
 echo -e "${GREEN}✅ Release Ready!${NC}"
